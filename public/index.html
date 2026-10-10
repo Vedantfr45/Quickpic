@@ -1,0 +1,363 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>QuickPic</title>
+<meta name="description" content="Send a photo from your phone to any computer with a short code. No login. Gone in 10 minutes.">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,400;12..96,600;12..96,800&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --ink: #14213d;
+    --ink-soft: #5b6680;
+    --page: #e9eef6;
+    --sheet: #ffffff;
+    --ticket: #ffc93c;
+    --ticket-deep: #e0a800;
+    --blue: #2f5bea;
+    --red: #c8321e;
+    --line: #cfd8e6;
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; }
+  body {
+    min-height: 100vh;
+    background: var(--page);
+    color: var(--ink);
+    font-family: "Bricolage Grotesque", "Segoe UI", system-ui, sans-serif;
+    font-size: 17px;
+    line-height: 1.45;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    padding: 28px 16px 40px;
+  }
+  .wrap { width: 100%; max-width: 460px; }
+
+  header { text-align: center; margin-bottom: 22px; }
+  h1 { font-size: 34px; font-weight: 800; letter-spacing: -0.03em; margin: 0; line-height: 1; }
+  header p { margin: 8px 0 0; color: var(--ink-soft); }
+
+  /* Send / Get switch */
+  .switch {
+    display: grid; grid-template-columns: 1fr 1fr; gap: 4px;
+    background: #d6deeb; border-radius: 16px; padding: 4px; margin-bottom: 16px;
+  }
+  .switch button {
+    font: inherit; font-weight: 600; color: var(--ink-soft);
+    border: 0; background: transparent; border-radius: 12px;
+    padding: 13px 8px; cursor: pointer;
+  }
+  .switch button[aria-selected="true"] { background: var(--sheet); color: var(--ink); box-shadow: 0 1px 2px rgba(20,33,61,.18); }
+
+  .sheet { background: var(--sheet); border-radius: 22px; padding: 22px; }
+  [hidden] { display: none !important; }
+
+  h2 { font-size: 21px; font-weight: 800; letter-spacing: -0.01em; margin: 0 0 4px; }
+  .hint { color: var(--ink-soft); margin: 0 0 18px; }
+
+  /* Pick a photo */
+  .drop {
+    display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 6px;
+    width: 100%; min-height: 190px; padding: 20px; text-align: center;
+    border: 2px dashed var(--line); border-radius: 16px; background: #f6f8fc;
+    font: inherit; color: var(--ink); cursor: pointer;
+  }
+  .drop strong { font-size: 20px; font-weight: 800; }
+  .drop span { color: var(--ink-soft); font-size: 15px; }
+  .drop.over { border-color: var(--blue); background: #edf2ff; }
+  .drop svg { width: 38px; height: 38px; margin-bottom: 4px; }
+
+  .progress { height: 8px; border-radius: 8px; background: #e3e9f3; overflow: hidden; margin-top: 16px; }
+  .progress i { display: block; height: 100%; width: 0; background: var(--blue); transition: width .15s linear; }
+
+  /* The ticket */
+  .ticket {
+    background: var(--ticket); border-radius: 18px; text-align: center; position: relative;
+    -webkit-mask: radial-gradient(circle 11px at 0 var(--tear), #0000 98%, #000) left / 51% 100% no-repeat,
+                  radial-gradient(circle 11px at 100% var(--tear), #0000 98%, #000) right / 51% 100% no-repeat;
+            mask: radial-gradient(circle 11px at 0 var(--tear), #0000 98%, #000) left / 51% 100% no-repeat,
+                  radial-gradient(circle 11px at 100% var(--tear), #0000 98%, #000) right / 51% 100% no-repeat;
+    --tear: 158px;
+  }
+  .ticket-top { height: 158px; display: flex; flex-direction: column; align-items: center; justify-content: center; padding: 0 12px; }
+  .ticket-top small { font-size: 15px; font-weight: 600; }
+  .code {
+    font-size: clamp(44px, 15vw, 64px); font-weight: 800; line-height: 1.05;
+    letter-spacing: 0.08em; margin-right: -0.08em; font-variant-numeric: tabular-nums;
+  }
+  .ticket-bottom { border-top: 2px dashed var(--ticket-deep); padding: 14px 16px 16px; }
+  .ticket-bottom b { font-size: 22px; font-variant-numeric: tabular-nums; }
+  .bar { height: 6px; border-radius: 6px; background: var(--ticket-deep); margin-top: 10px; overflow: hidden; }
+  .bar i { display: block; height: 100%; width: 100%; background: var(--ink); }
+  .ticket.pop { animation: pop .35s cubic-bezier(.2,1.4,.4,1); }
+  @keyframes pop { from { transform: scale(.92); opacity: 0; } to { transform: none; opacity: 1; } }
+  @media (prefers-reduced-motion: reduce) { .ticket.pop { animation: none; } .progress i { transition: none; } }
+
+  .steps { margin: 18px 0 0; padding-left: 22px; color: var(--ink-soft); }
+  .steps li { margin: 4px 0; }
+  .steps b { color: var(--ink); }
+
+  /* Type the code */
+  .codebox {
+    width: 100%; font: inherit; font-size: clamp(34px, 12vw, 48px); font-weight: 800;
+    text-align: center; letter-spacing: 0.18em; padding: 14px 0 14px 0.18em;
+    border: 2px solid var(--line); border-radius: 16px; background: #f6f8fc; color: var(--ink);
+    font-variant-numeric: tabular-nums;
+  }
+  .codebox::placeholder { color: #c3ccdc; }
+  .codebox:focus { outline: none; border-color: var(--blue); background: #fff; }
+
+  .photo { width: 100%; max-height: 60vh; object-fit: contain; border-radius: 14px; background: #f0f3f8; display: block; }
+  .left { margin: 12px 0 0; color: var(--ink-soft); text-align: center; }
+
+  .btn {
+    display: block; width: 100%; font: inherit; font-weight: 800; font-size: 18px; text-align: center; text-decoration: none;
+    border: 0; border-radius: 14px; padding: 15px; margin-top: 14px; cursor: pointer;
+    background: var(--ink); color: #fff;
+  }
+  .btn.quiet { background: #e9eef6; color: var(--ink); font-weight: 600; }
+  .msg { margin: 14px 0 0; color: var(--red); font-weight: 600; text-align: center; min-height: 1.45em; }
+
+  :focus-visible { outline: 3px solid var(--blue); outline-offset: 2px; }
+  footer { margin-top: 18px; text-align: center; color: var(--ink-soft); font-size: 15px; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <h1>QuickPic</h1>
+    <p>Phone to any computer. No login. Gone in 10 minutes.</p>
+  </header>
+
+  <div class="switch" role="tablist">
+    <button id="tab-send" role="tab" aria-controls="send" aria-selected="true">Send a photo</button>
+    <button id="tab-get" role="tab" aria-controls="get" aria-selected="false">Get a photo</button>
+  </div>
+
+  <!-- SEND -->
+  <section class="sheet" id="send" role="tabpanel" aria-labelledby="tab-send">
+    <div id="send-pick">
+      <h2>Send a photo</h2>
+      <p class="hint">Pick one and you get a code for it.</p>
+      <button class="drop" id="drop" type="button">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 16V4M7 9l5-5 5 5M4 16v3a1 1 0 0 0 1 1h14a1 1 0 0 0 1-1v-3"/></svg>
+        <strong>Choose a photo</strong>
+        <span id="drop-sub">or drop it here, or paste with Ctrl+V</span>
+      </button>
+      <input id="file" type="file" accept="image/*" hidden>
+      <div class="progress" id="progress" hidden><i></i></div>
+      <p class="msg" id="send-msg" role="alert"></p>
+    </div>
+
+    <div id="send-done" hidden>
+      <div class="ticket" id="ticket">
+        <div class="ticket-top">
+          <small>Your code</small>
+          <div class="code" id="code" aria-live="polite"></div>
+        </div>
+        <div class="ticket-bottom">
+          Works for <b id="send-time">10:00</b>
+          <div class="bar"><i id="send-bar"></i></div>
+        </div>
+      </div>
+      <ol class="steps">
+        <li>On the computer, open <b id="site"></b></li>
+        <li>Choose <b>Get a photo</b></li>
+        <li>Type the code</li>
+      </ol>
+      <button class="btn quiet" id="copy" type="button">Copy code</button>
+      <button class="btn quiet" id="again" type="button">Send another photo</button>
+    </div>
+  </section>
+
+  <!-- GET -->
+  <section class="sheet" id="get" role="tabpanel" aria-labelledby="tab-get" hidden>
+    <div id="get-ask">
+      <h2>Get a photo</h2>
+      <p class="hint">Type the code shown on the phone.</p>
+      <input class="codebox" id="codebox" inputmode="numeric" autocomplete="off" aria-label="Code">
+      <p class="msg" id="get-msg" role="alert"></p>
+    </div>
+
+    <div id="get-done" hidden>
+      <img class="photo" id="photo" alt="The photo that was sent">
+      <p class="left">Available for <b id="get-time"></b> more</p>
+      <a class="btn" id="download">Download photo</a>
+      <button class="btn quiet" id="another" type="button">Enter another code</button>
+    </div>
+  </section>
+
+  <footer>Photos are deleted from the server after 10 minutes.</footer>
+</div>
+
+<script>
+(function () {
+  var $ = function (id) { return document.getElementById(id); };
+  var codeLength = 6, maxFileMb = 10;
+  var sendTimer = null, getTimer = null;
+
+  // ----- Setup -----
+  $("site").textContent = location.host;
+  var isPhone = window.matchMedia("(pointer: coarse)").matches;
+  if (isPhone) $("drop-sub").textContent = "from your camera or gallery";
+
+  function setCodeLength(n) {
+    codeLength = n;
+    $("codebox").maxLength = n;
+    $("codebox").placeholder = new Array(n + 1).join("0");
+  }
+  setCodeLength(6);
+  fetch("/api/config").then(function (r) { return r.json(); }).then(function (c) {
+    setCodeLength(c.codeLength); maxFileMb = c.maxFileMb;
+  }).catch(function () {});
+
+  // ----- Send / Get switch -----
+  function show(which) {
+    var send = which === "send";
+    $("send").hidden = !send; $("get").hidden = send;
+    $("tab-send").setAttribute("aria-selected", send);
+    $("tab-get").setAttribute("aria-selected", !send);
+    if (!send && !$("get-ask").hidden) $("codebox").focus();
+  }
+  $("tab-send").onclick = function () { show("send"); };
+  $("tab-get").onclick = function () { show("get"); };
+  show(isPhone ? "send" : "get"); // phones usually send, computers usually receive
+
+  function clock(seconds) {
+    var m = Math.floor(seconds / 60), s = seconds % 60;
+    return m + ":" + (s < 10 ? "0" : "") + s;
+  }
+  // Calls tick(secondsLeft) every second, then done() at zero.
+  function countdown(totalSeconds, tick, done) {
+    var end = Date.now() + totalSeconds * 1000;
+    function step() {
+      var left = Math.max(0, Math.round((end - Date.now()) / 1000));
+      tick(left);
+      if (left <= 0) { clearInterval(id); done(); }
+    }
+    var id = setInterval(step, 1000);
+    step();
+    return id;
+  }
+
+  // ----- Send -----
+  $("drop").onclick = function () { $("file").click(); };
+  $("file").onchange = function () { if (this.files[0]) upload(this.files[0]); this.value = ""; };
+
+  ["dragenter", "dragover"].forEach(function (e) {
+    $("drop").addEventListener(e, function (ev) { ev.preventDefault(); $("drop").classList.add("over"); });
+  });
+  ["dragleave", "drop"].forEach(function (e) {
+    $("drop").addEventListener(e, function (ev) { ev.preventDefault(); $("drop").classList.remove("over"); });
+  });
+  $("drop").addEventListener("drop", function (ev) {
+    var f = ev.dataTransfer.files[0]; if (f) upload(f);
+  });
+  document.addEventListener("paste", function (ev) {
+    if ($("send").hidden || $("send-pick").hidden) return;
+    var items = (ev.clipboardData || {}).items || [];
+    for (var i = 0; i < items.length; i++) {
+      if (items[i].type.indexOf("image/") === 0) { upload(items[i].getAsFile()); return; }
+    }
+  });
+
+  function upload(file) {
+    $("send-msg").textContent = "";
+    if (file.type.indexOf("image/") !== 0) { $("send-msg").textContent = "That is not an image. Pick a photo."; return; }
+    if (file.size > maxFileMb * 1024 * 1024) { $("send-msg").textContent = "That photo is over " + maxFileMb + " MB. Pick a smaller one."; return; }
+
+    var bar = $("progress").firstElementChild;
+    bar.style.width = "0"; $("progress").hidden = false; $("drop").disabled = true;
+
+    var form = new FormData(); form.append("image", file);
+    var xhr = new XMLHttpRequest();
+    xhr.open("POST", "/api/upload");
+    xhr.upload.onprogress = function (e) { if (e.lengthComputable) bar.style.width = (e.loaded / e.total * 100) + "%"; };
+    xhr.onloadend = function () {
+      $("progress").hidden = true; $("drop").disabled = false;
+      var data = {};
+      try { data = JSON.parse(xhr.responseText); } catch (e) {}
+      if (xhr.status === 200 && data.code) return showTicket(data);
+      $("send-msg").textContent = data.error || "Upload failed. Check your internet and try again.";
+    };
+    xhr.send(form);
+  }
+
+  function showTicket(data) {
+    $("code").textContent = data.code;
+    $("copy").textContent = "Copy code";
+    $("send-pick").hidden = true; $("send-done").hidden = false;
+    $("ticket").classList.remove("pop"); void $("ticket").offsetWidth; $("ticket").classList.add("pop");
+    clearInterval(sendTimer);
+    var total = data.expiresInSeconds;
+    sendTimer = countdown(total, function (left) {
+      $("send-time").textContent = clock(left);
+      $("send-bar").style.width = (left / total * 100) + "%";
+    }, function () {
+      resetSend(); $("send-msg").textContent = "That code ran out. Send the photo again for a new one.";
+    });
+  }
+  function resetSend() {
+    clearInterval(sendTimer);
+    $("send-done").hidden = true; $("send-pick").hidden = false; $("send-msg").textContent = "";
+  }
+  $("again").onclick = resetSend;
+  $("copy").onclick = function () {
+    var btn = this, code = $("code").textContent;
+    (navigator.clipboard ? navigator.clipboard.writeText(code) : Promise.reject()).then(
+      function () { btn.textContent = "Copied"; },
+      function () { btn.textContent = "Could not copy. Type it in: " + code; }
+    );
+  };
+
+  // ----- Get -----
+  $("codebox").addEventListener("input", function () {
+    this.value = this.value.replace(/\D/g, "").slice(0, codeLength);
+    $("get-msg").textContent = "";
+    if (this.value.length === codeLength) fetchPhoto(this.value);
+  });
+
+  function fetchPhoto(code) {
+    $("codebox").disabled = true;
+    fetch("/api/info/" + code).then(function (r) {
+      return r.json().then(function (d) { return { ok: r.ok, data: d }; });
+    }).then(function (res) {
+      $("codebox").disabled = false;
+      if (!res.ok) {
+        $("get-msg").textContent = res.data.error || "That code did not work.";
+        $("codebox").value = ""; $("codebox").focus();
+        return;
+      }
+      var url = "/api/image/" + code;
+      $("photo").hidden = false;
+      $("photo").onerror = function () { this.hidden = true; }; // e.g. HEIC on a PC: no preview, download still works
+      $("photo").src = url;
+      $("download").href = url + "?download=1";
+      $("download").setAttribute("download", res.data.name);
+      $("get-ask").hidden = true; $("get-done").hidden = false;
+      clearInterval(getTimer);
+      getTimer = countdown(res.data.expiresInSeconds, function (left) {
+        $("get-time").textContent = clock(left);
+      }, function () {
+        resetGet(); $("get-msg").textContent = "That photo has been deleted. Ask for a new code.";
+      });
+    }).catch(function () {
+      $("codebox").disabled = false;
+      $("get-msg").textContent = "Could not reach the server. Check your internet and try again.";
+    });
+  }
+  function resetGet() {
+    clearInterval(getTimer);
+    $("photo").removeAttribute("src");
+    $("codebox").value = ""; $("get-msg").textContent = "";
+    $("get-done").hidden = true; $("get-ask").hidden = false;
+    $("codebox").focus();
+  }
+  $("another").onclick = resetGet;
+})();
+</script>
+</body>
+</html>

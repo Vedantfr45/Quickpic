@@ -1,0 +1,16 @@
+{
+  "name": "quickpic",
+  "version": "1.0.0",
+  "description": "Share an image between devices with a short code that expires in 10 minutes",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js"
+  },
+  "engines": {
+    "node": ">=18"
+  },
+  "dependencies": {
+    "express": "^4.21.2",
+    "multer": "^2.0.2"
+  }
+}
