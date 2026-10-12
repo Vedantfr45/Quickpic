@@ -1,6 +1,8 @@
 # QuickPic
 
-Send a photo from your phone to any computer with a 6-digit code. No login. The photo is deleted after 10 minutes.
+Send a file from your phone to any computer with a 6-digit code. No login. The file is deleted after 10 minutes.
+
+Supported: photos (JPG, PNG, WEBP, GIF, HEIC), videos (MP4, MOV, WEBM), audio (MP3, M4A, WAV), PDF and text files, up to 50 MB.
 
 ## Run it on your computer
 
@@ -16,7 +18,7 @@ Send a photo from your phone to any computer with a 6-digit code. No login. The 
 
 ## Files
 
-- `server.js` - the server: takes uploads, gives out codes, deletes photos after 10 minutes
+- `server.js` - the server: takes uploads, gives out codes, deletes files after 10 minutes
 - `public/index.html` - the whole website (page, styling, and script)
 - `package.json` - the list of packages the server needs
 

@@ -110,7 +110,23 @@
   .codebox::placeholder { color: #c3ccdc; }
   .codebox:focus { outline: none; border-color: var(--blue); background: #fff; }
 
-  .photo { width: 100%; max-height: 60vh; object-fit: contain; border-radius: 14px; background: #f0f3f8; display: block; }
+  .photo, .preview video { width: 100%; max-height: 60vh; object-fit: contain; border-radius: 14px; background: #f0f3f8; display: block; }
+  .preview audio { width: 100%; display: block; margin-top: 12px; }
+  .preview iframe { width: 100%; height: 60vh; border: 0; border-radius: 14px; background: #f0f3f8; display: block; }
+  .preview pre {
+    margin: 0; max-height: 50vh; overflow: auto; padding: 16px; border-radius: 14px; background: #f6f8fc;
+    font: 15px/1.5 ui-monospace, "Cascadia Mono", Consolas, monospace; white-space: pre-wrap; word-break: break-word;
+  }
+  .filecard { display: flex; align-items: center; gap: 14px; padding: 14px; border-radius: 14px; background: #f6f8fc; margin-bottom: 12px; }
+  .filecard .badge {
+    flex: none; width: 52px; height: 52px; border-radius: 12px; display: grid; place-items: center;
+    background: var(--ink); color: #fff; font-weight: 800; font-size: 13px; letter-spacing: .02em;
+  }
+  .filecard .meta { min-width: 0; }
+  .filecard .fname { font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .filecard .fsize { color: var(--ink-soft); font-size: 15px; }
+  .sentname { margin: 12px 0 0; text-align: center; color: var(--ink-soft); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .pct { margin: 8px 0 0; text-align: center; color: var(--ink-soft); font-size: 15px; font-variant-numeric: tabular-nums; }
   .left { margin: 12px 0 0; color: var(--ink-soft); text-align: center; }
 
   .btn {
@@ -133,22 +149,23 @@
   </header>
 
   <div class="switch" role="tablist">
-    <button id="tab-send" role="tab" aria-controls="send" aria-selected="true">Send a photo</button>
-    <button id="tab-get" role="tab" aria-controls="get" aria-selected="false">Get a photo</button>
+    <button id="tab-send" role="tab" aria-controls="send" aria-selected="true">Send</button>
+    <button id="tab-get" role="tab" aria-controls="get" aria-selected="false">Receive</button>
   </div>
 
   <!-- SEND -->
   <section class="sheet" id="send" role="tabpanel" aria-labelledby="tab-send">
     <div id="send-pick">
-      <h2>Send a photo</h2>
-      <p class="hint">Pick one and you get a code for it.</p>
+      <h2>Send a file</h2>
+      <p class="hint">Photos, videos, MP3s, PDFs and text files, up to <span id="max-mb">50</span> MB.</p>
       <button class="drop" id="drop" type="button">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 16V4M7 9l5-5 5 5M4 16v3a1 1 0 0 0 1 1h14a1 1 0 0 0 1-1v-3"/></svg>
-        <strong>Choose a photo</strong>
+        <strong>Choose a file</strong>
         <span id="drop-sub">or drop it here, or paste with Ctrl+V</span>
       </button>
-      <input id="file" type="file" accept="image/*" hidden>
+      <input id="file" type="file" accept="image/*,video/*,audio/*,.pdf,.txt,.mp3,.m4a,.wav,.mp4,.mov,.webm" hidden>
       <div class="progress" id="progress" hidden><i></i></div>
+      <p class="pct" id="pct" hidden></p>
       <p class="msg" id="send-msg" role="alert"></p>
     </div>
 
@@ -163,46 +180,53 @@
           <div class="bar"><i id="send-bar"></i></div>
         </div>
       </div>
+      <p class="sentname" id="sent-name"></p>
       <ol class="steps">
         <li>On the computer, open <b id="site"></b></li>
-        <li>Choose <b>Get a photo</b></li>
+        <li>Choose <b>Receive</b></li>
         <li>Type the code</li>
       </ol>
       <button class="btn quiet" id="copy" type="button">Copy code</button>
-      <button class="btn quiet" id="again" type="button">Send another photo</button>
+      <button class="btn quiet" id="again" type="button">Send another file</button>
     </div>
   </section>
 
   <!-- GET -->
   <section class="sheet" id="get" role="tabpanel" aria-labelledby="tab-get" hidden>
     <div id="get-ask">
-      <h2>Get a photo</h2>
+      <h2>Receive a file</h2>
       <p class="hint">Type the code shown on the phone.</p>
       <input class="codebox" id="codebox" inputmode="numeric" autocomplete="off" aria-label="Code">
       <p class="msg" id="get-msg" role="alert"></p>
     </div>
 
     <div id="get-done" hidden>
-      <img class="photo" id="photo" alt="The photo that was sent">
+      <div class="filecard" id="filecard">
+        <div class="badge" id="badge"></div>
+        <div class="meta"><div class="fname" id="fname"></div><div class="fsize" id="fsize"></div></div>
+      </div>
+      <div class="preview" id="preview"></div>
       <p class="left">Available for <b id="get-time"></b> more</p>
-      <a class="btn" id="download">Download photo</a>
+      <a class="btn" id="download">Download file</a>
+      <button class="btn quiet" id="copy-text" type="button" hidden>Copy text</button>
       <button class="btn quiet" id="another" type="button">Enter another code</button>
     </div>
   </section>
 
-  <footer>Photos are deleted from the server after 10 minutes.</footer>
+  <footer>Files are deleted from the server after 10 minutes.</footer>
 </div>
 
 <script>
 (function () {
   var $ = function (id) { return document.getElementById(id); };
-  var codeLength = 6, maxFileMb = 10;
+  var codeLength = 6, maxFileMb = 50;
+  var allowed = [".jpg", ".jpeg", ".png", ".webp", ".gif", ".heic", ".heif", ".pdf", ".txt", ".mp3", ".m4a", ".wav", ".mp4", ".mov", ".webm"];
   var sendTimer = null, getTimer = null;
 
   // ----- Setup -----
   $("site").textContent = location.host;
   var isPhone = window.matchMedia("(pointer: coarse)").matches;
-  if (isPhone) $("drop-sub").textContent = "from your camera or gallery";
+  if (isPhone) $("drop-sub").textContent = "from your gallery, camera or files";
 
   function setCodeLength(n) {
     codeLength = n;
@@ -211,10 +235,11 @@
   }
   setCodeLength(6);
   fetch("/api/config").then(function (r) { return r.json(); }).then(function (c) {
-    setCodeLength(c.codeLength); maxFileMb = c.maxFileMb;
+    setCodeLength(c.codeLength); maxFileMb = c.maxFileMb; $("max-mb").textContent = c.maxFileMb;
+    if (c.extensions) allowed = c.extensions;
   }).catch(function () {});
 
-  // ----- Send / Get switch -----
+  // ----- Send / Receive switch -----
   function show(which) {
     var send = which === "send";
     $("send").hidden = !send; $("get").hidden = send;
@@ -229,6 +254,11 @@
   function clock(seconds) {
     var m = Math.floor(seconds / 60), s = seconds % 60;
     return m + ":" + (s < 10 ? "0" : "") + s;
+  }
+  function size(bytes) {
+    if (bytes < 1024) return bytes + " B";
+    if (bytes < 1024 * 1024) return Math.round(bytes / 1024) + " KB";
+    return (bytes / 1024 / 1024).toFixed(1) + " MB";
   }
   // Calls tick(secondsLeft) every second, then done() at zero.
   function countdown(totalSeconds, tick, done) {
@@ -260,24 +290,36 @@
     if ($("send").hidden || $("send-pick").hidden) return;
     var items = (ev.clipboardData || {}).items || [];
     for (var i = 0; i < items.length; i++) {
-      if (items[i].type.indexOf("image/") === 0) { upload(items[i].getAsFile()); return; }
+      if (items[i].kind === "file") { upload(items[i].getAsFile()); return; }
     }
   });
 
+  function extension(name) {
+    var m = /\.[^.]+$/.exec(name || ""); return m ? m[0].toLowerCase() : "";
+  }
   function upload(file) {
     $("send-msg").textContent = "";
-    if (file.type.indexOf("image/") !== 0) { $("send-msg").textContent = "That is not an image. Pick a photo."; return; }
-    if (file.size > maxFileMb * 1024 * 1024) { $("send-msg").textContent = "That photo is over " + maxFileMb + " MB. Pick a smaller one."; return; }
+    var ext = extension(file.name);
+    if (allowed.indexOf(ext) < 0 && !(ext === "" && file.type.indexOf("image/") === 0)) {
+      $("send-msg").textContent = "This file type is not supported. Send a photo, video, MP3, PDF or text file.";
+      return;
+    }
+    if (file.size > maxFileMb * 1024 * 1024) { $("send-msg").textContent = "That file is over " + maxFileMb + " MB. Pick a smaller one."; return; }
 
     var bar = $("progress").firstElementChild;
     bar.style.width = "0"; $("progress").hidden = false; $("drop").disabled = true;
+    $("pct").hidden = false; $("pct").textContent = "Uploading " + file.name;
 
-    var form = new FormData(); form.append("image", file);
+    var form = new FormData(); form.append("file", file);
     var xhr = new XMLHttpRequest();
     xhr.open("POST", "/api/upload");
-    xhr.upload.onprogress = function (e) { if (e.lengthComputable) bar.style.width = (e.loaded / e.total * 100) + "%"; };
+    xhr.upload.onprogress = function (e) {
+      if (!e.lengthComputable) return;
+      var p = Math.round(e.loaded / e.total * 100);
+      bar.style.width = p + "%"; $("pct").textContent = "Uploading " + p + "%";
+    };
     xhr.onloadend = function () {
-      $("progress").hidden = true; $("drop").disabled = false;
+      $("progress").hidden = true; $("pct").hidden = true; $("drop").disabled = false;
       var data = {};
       try { data = JSON.parse(xhr.responseText); } catch (e) {}
       if (xhr.status === 200 && data.code) return showTicket(data);
@@ -288,6 +330,7 @@
 
   function showTicket(data) {
     $("code").textContent = data.code;
+    $("sent-name").textContent = data.name || "";
     $("copy").textContent = "Copy code";
     $("send-pick").hidden = true; $("send-done").hidden = false;
     $("ticket").classList.remove("pop"); void $("ticket").offsetWidth; $("ticket").classList.add("pop");
@@ -297,7 +340,7 @@
       $("send-time").textContent = clock(left);
       $("send-bar").style.width = (left / total * 100) + "%";
     }, function () {
-      resetSend(); $("send-msg").textContent = "That code ran out. Send the photo again for a new one.";
+      resetSend(); $("send-msg").textContent = "That code ran out. Send the file again for a new one.";
     });
   }
   function resetSend() {
@@ -313,14 +356,53 @@
     );
   };
 
-  // ----- Get -----
+  // ----- Receive -----
   $("codebox").addEventListener("input", function () {
     this.value = this.value.replace(/\D/g, "").slice(0, codeLength);
     $("get-msg").textContent = "";
-    if (this.value.length === codeLength) fetchPhoto(this.value);
+    if (this.value.length === codeLength) fetchFile(this.value);
   });
 
-  function fetchPhoto(code) {
+  function el(tag, attrs) {
+    var e = document.createElement(tag);
+    for (var k in attrs) e.setAttribute(k, attrs[k]);
+    return e;
+  }
+  function showPreview(kind, url) {
+    var box = $("preview"); box.innerHTML = "";
+    $("copy-text").hidden = true;
+    if (kind === "image") {
+      var img = el("img", { "class": "photo", alt: "The photo that was sent" });
+      img.onerror = function () { img.remove(); }; // e.g. HEIC on a PC: no preview, download still works
+      img.src = url; box.appendChild(img);
+    } else if (kind === "video") {
+      var v = el("video", { controls: "", playsinline: "", preload: "metadata" });
+      v.onerror = function () { v.remove(); };
+      v.src = url; box.appendChild(v);
+    } else if (kind === "audio") {
+      var a = el("audio", { controls: "", preload: "metadata" });
+      a.src = url; box.appendChild(a);
+    } else if (kind === "pdf" && !isPhone) {
+      box.appendChild(el("iframe", { src: url, title: "PDF preview" }));
+    } else if (kind === "text") {
+      var pre = el("pre", {}); pre.textContent = "Loading…"; box.appendChild(pre);
+      fetch(url).then(function (r) { return r.text(); }).then(function (t) {
+        pre.textContent = t.length > 200000 ? t.slice(0, 200000) + "\n\n… (download the file to see the rest)" : t;
+        $("copy-text").hidden = false;
+        $("copy-text").textContent = "Copy text";
+        $("copy-text").onclick = function () {
+          var btn = this;
+          (navigator.clipboard ? navigator.clipboard.writeText(t) : Promise.reject()).then(
+            function () { btn.textContent = "Copied"; },
+            function () { btn.textContent = "Could not copy. Select the text above instead."; }
+          );
+        };
+      }).catch(function () { pre.textContent = "Could not load a preview. Download the file instead."; });
+    }
+  }
+
+  var BADGES = { image: "IMG", video: "VIDEO", audio: "AUDIO", pdf: "PDF", text: "TXT" };
+  function fetchFile(code) {
     $("codebox").disabled = true;
     fetch("/api/info/" + code).then(function (r) {
       return r.json().then(function (d) { return { ok: r.ok, data: d }; });
@@ -331,18 +413,21 @@
         $("codebox").value = ""; $("codebox").focus();
         return;
       }
-      var url = "/api/image/" + code;
-      $("photo").hidden = false;
-      $("photo").onerror = function () { this.hidden = true; }; // e.g. HEIC on a PC: no preview, download still works
-      $("photo").src = url;
+      var d = res.data, url = "/api/file/" + code;
+      $("filecard").hidden = d.kind === "image";
+      $("badge").textContent = BADGES[d.kind] || "FILE";
+      $("fname").textContent = d.name; $("fname").title = d.name;
+      $("fsize").textContent = size(d.size);
+      showPreview(d.kind, url);
       $("download").href = url + "?download=1";
-      $("download").setAttribute("download", res.data.name);
+      $("download").setAttribute("download", d.name);
+      $("download").textContent = d.kind === "image" ? "Download photo" : "Download file";
       $("get-ask").hidden = true; $("get-done").hidden = false;
       clearInterval(getTimer);
-      getTimer = countdown(res.data.expiresInSeconds, function (left) {
+      getTimer = countdown(d.expiresInSeconds, function (left) {
         $("get-time").textContent = clock(left);
       }, function () {
-        resetGet(); $("get-msg").textContent = "That photo has been deleted. Ask for a new code.";
+        resetGet(); $("get-msg").textContent = "That file has been deleted. Ask for a new code.";
       });
     }).catch(function () {
       $("codebox").disabled = false;
@@ -351,7 +436,7 @@
   }
   function resetGet() {
     clearInterval(getTimer);
-    $("photo").removeAttribute("src");
+    $("preview").innerHTML = "";
     $("codebox").value = ""; $("get-msg").textContent = "";
     $("get-done").hidden = true; $("get-ask").hidden = false;
     $("codebox").focus();
