@@ -35,6 +35,7 @@
     padding: 28px 16px 40px;
   }
   .wrap { width: 100%; max-width: 460px; }
+  .wrap.wide { max-width: 860px; }
 
   header { text-align: center; margin-bottom: 22px; }
   h1 { font-size: 34px; font-weight: 800; letter-spacing: -0.03em; margin: 0; line-height: 1; }
@@ -114,7 +115,7 @@
   .preview audio { width: 100%; display: block; margin-top: 12px; }
   .preview iframe { width: 100%; height: 60vh; border: 0; border-radius: 14px; background: #f0f3f8; display: block; }
   .preview pre {
-    margin: 0; max-height: 50vh; overflow: auto; padding: 16px; border-radius: 14px; background: #f6f8fc;
+    margin: 0; max-height: 55vh; overflow: auto; padding: 16px; border-radius: 14px; background: #f6f8fc; tab-size: 4;
     font: 15px/1.5 ui-monospace, "Cascadia Mono", Consolas, monospace; white-space: pre-wrap; word-break: break-word;
   }
   .filecard { display: flex; align-items: center; gap: 14px; padding: 14px; border-radius: 14px; background: #f6f8fc; margin-bottom: 12px; }
@@ -126,6 +127,15 @@
   .filecard .fname { font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .filecard .fsize { color: var(--ink-soft); font-size: 15px; }
   .sentname { margin: 12px 0 0; text-align: center; color: var(--ink-soft); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .or { display: flex; align-items: center; gap: 12px; margin: 20px 0 14px; color: var(--ink-soft); font-size: 15px; }
+  .or::before, .or::after { content: ""; flex: 1; border-top: 1px solid var(--line); }
+  .textin {
+    width: 100%; min-height: 150px; resize: vertical; padding: 14px; border: 2px solid var(--line); border-radius: 16px;
+    background: #f6f8fc; color: var(--ink); font: 15px/1.5 ui-monospace, "Cascadia Mono", Consolas, monospace; tab-size: 4;
+  }
+  .textin:focus { outline: none; border-color: var(--blue); background: #fff; }
+  .count { margin: 6px 2px 0; color: var(--ink-soft); font-size: 14px; text-align: right; font-variant-numeric: tabular-nums; }
+  .btn:disabled { opacity: .45; cursor: default; }
   .pct { margin: 8px 0 0; text-align: center; color: var(--ink-soft); font-size: 15px; font-variant-numeric: tabular-nums; }
   .left { margin: 12px 0 0; color: var(--ink-soft); text-align: center; }
 
@@ -142,7 +152,7 @@
 </style>
 </head>
 <body>
-<div class="wrap">
+<div class="wrap" id="wrap">
   <header>
     <h1>QuickPic</h1>
     <p>Phone to any computer. No login. Gone in 10 minutes.</p>
@@ -166,6 +176,10 @@
       <input id="file" type="file" accept="image/*,video/*,audio/*,.pdf,.txt,.mp3,.m4a,.wav,.mp4,.mov,.webm" hidden>
       <div class="progress" id="progress" hidden><i></i></div>
       <p class="pct" id="pct" hidden></p>
+      <div class="or">or send text</div>
+      <textarea class="textin" id="textin" spellcheck="false" autocapitalize="off" autocomplete="off" placeholder="Paste code, notes or a link here" aria-label="Text to send"></textarea>
+      <p class="count" id="count">0 words</p>
+      <button class="btn" id="send-text" type="button" disabled>Send text</button>
       <p class="msg" id="send-msg" role="alert"></p>
     </div>
 
@@ -207,8 +221,8 @@
       </div>
       <div class="preview" id="preview"></div>
       <p class="left">Available for <b id="get-time"></b> more</p>
+      <button class="btn" id="copy-text" type="button" hidden>Copy text</button>
       <a class="btn" id="download">Download file</a>
-      <button class="btn quiet" id="copy-text" type="button" hidden>Copy text</button>
       <button class="btn quiet" id="another" type="button">Enter another code</button>
     </div>
   </section>
@@ -307,7 +321,7 @@
     if (file.size > maxFileMb * 1024 * 1024) { $("send-msg").textContent = "That file is over " + maxFileMb + " MB. Pick a smaller one."; return; }
 
     var bar = $("progress").firstElementChild;
-    bar.style.width = "0"; $("progress").hidden = false; $("drop").disabled = true;
+    bar.style.width = "0"; $("progress").hidden = false; $("drop").disabled = true; $("send-text").disabled = true;
     $("pct").hidden = false; $("pct").textContent = "Uploading " + file.name;
 
     var form = new FormData(); form.append("file", file);
@@ -320,6 +334,7 @@
     };
     xhr.onloadend = function () {
       $("progress").hidden = true; $("pct").hidden = true; $("drop").disabled = false;
+      $("send-text").disabled = !$("textin").value.trim();
       var data = {};
       try { data = JSON.parse(xhr.responseText); } catch (e) {}
       if (xhr.status === 200 && data.code) return showTicket(data);
@@ -327,6 +342,19 @@
     };
     xhr.send(form);
   }
+
+  var MAX_TEXT = 100000;
+  function words(t) { var m = t.trim().match(/\S+/g); return m ? m.length : 0; }
+  $("textin").addEventListener("input", function () {
+    var t = this.value, n = words(t);
+    $("count").textContent = n + (n === 1 ? " word" : " words") + (t.length > MAX_TEXT ? ". Too long: the limit is " + MAX_TEXT.toLocaleString() + " characters." : "");
+    $("send-text").disabled = !t.trim() || t.length > MAX_TEXT;
+  });
+  $("send-text").onclick = function () {
+    var t = $("textin").value;
+    if (!t.trim() || t.length > MAX_TEXT) return;
+    upload(new File([t], "Text.txt", { type: "text/plain" }));
+  };
 
   function showTicket(data) {
     $("code").textContent = data.code;
@@ -345,6 +373,7 @@
   }
   function resetSend() {
     clearInterval(sendTimer);
+    $("textin").value = ""; $("count").textContent = "0 words"; $("send-text").disabled = true;
     $("send-done").hidden = true; $("send-pick").hidden = false; $("send-msg").textContent = "";
   }
   $("again").onclick = resetSend;
@@ -362,6 +391,20 @@
     $("get-msg").textContent = "";
     if (this.value.length === codeLength) fetchFile(this.value);
   });
+
+  function copyFrom(text, node, btn, okLabel) {
+    function fallback() {
+      try {
+        var r = document.createRange(); r.selectNodeContents(node);
+        var sel = window.getSelection(); sel.removeAllRanges(); sel.addRange(r);
+        if (document.execCommand("copy")) { btn.textContent = okLabel; return; }
+      } catch (e) {}
+      btn.textContent = "Text selected. Press Ctrl+C to copy.";
+    }
+    if (navigator.clipboard && window.isSecureContext) {
+      navigator.clipboard.writeText(text).then(function () { btn.textContent = okLabel; }, fallback);
+    } else fallback();
+  }
 
   function el(tag, attrs) {
     var e = document.createElement(tag);
@@ -390,13 +433,7 @@
         pre.textContent = t.length > 200000 ? t.slice(0, 200000) + "\n\n… (download the file to see the rest)" : t;
         $("copy-text").hidden = false;
         $("copy-text").textContent = "Copy text";
-        $("copy-text").onclick = function () {
-          var btn = this;
-          (navigator.clipboard ? navigator.clipboard.writeText(t) : Promise.reject()).then(
-            function () { btn.textContent = "Copied"; },
-            function () { btn.textContent = "Could not copy. Select the text above instead."; }
-          );
-        };
+        $("copy-text").onclick = function () { copyFrom(t, pre, this, "Copied"); };
       }).catch(function () { pre.textContent = "Could not load a preview. Download the file instead."; });
     }
   }
@@ -418,10 +455,12 @@
       $("badge").textContent = BADGES[d.kind] || "FILE";
       $("fname").textContent = d.name; $("fname").title = d.name;
       $("fsize").textContent = size(d.size);
+      $("wrap").classList.toggle("wide", d.kind === "text" && !isPhone);
       showPreview(d.kind, url);
       $("download").href = url + "?download=1";
       $("download").setAttribute("download", d.name);
-      $("download").textContent = d.kind === "image" ? "Download photo" : "Download file";
+      $("download").textContent = d.kind === "image" ? "Download photo" : d.kind === "text" ? "Download as .txt" : "Download file";
+      $("download").className = d.kind === "text" ? "btn quiet" : "btn";
       $("get-ask").hidden = true; $("get-done").hidden = false;
       clearInterval(getTimer);
       getTimer = countdown(d.expiresInSeconds, function (left) {
@@ -437,6 +476,7 @@
   function resetGet() {
     clearInterval(getTimer);
     $("preview").innerHTML = "";
+    $("wrap").classList.remove("wide");
     $("codebox").value = ""; $("get-msg").textContent = "";
     $("get-done").hidden = true; $("get-ask").hidden = false;
     $("codebox").focus();
