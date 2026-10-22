@@ -162,6 +162,9 @@
     background: var(--ink); color: #fff;
   }
   .btn.quiet { background: #e9eef6; color: var(--ink); font-weight: 600; }
+  .btn.end { background: transparent; color: var(--red); font-weight: 600; border: 2px solid #f1c7c0; }
+  .btn.end.armed { background: var(--red); color: #fff; border-color: var(--red); }
+  .note { margin: 14px 0 0; text-align: center; color: var(--ink-soft); font-weight: 600; }
   .msg { margin: 14px 0 0; color: var(--red); font-weight: 600; text-align: center; min-height: 1.45em; }
 
   :focus-visible { outline: 3px solid var(--blue); outline-offset: 2px; }
@@ -198,6 +201,7 @@
       <p class="count" id="count">0 words</p>
       <button class="btn" id="send-text" type="button" disabled>Send text</button>
       <p class="msg" id="send-msg" role="alert"></p>
+      <p class="note" id="send-note" role="status"></p>
     </div>
 
     <div id="send-done" hidden>
@@ -219,6 +223,7 @@
       </ol>
       <button class="btn quiet" id="copy" type="button">Copy code</button>
       <button class="btn quiet" id="again" type="button">Send something else</button>
+      <button class="btn end" id="end-send" type="button">End now and delete</button>
     </div>
   </section>
 
@@ -229,6 +234,7 @@
       <p class="hint">Type the code shown on the phone.</p>
       <input class="codebox" id="codebox" inputmode="numeric" autocomplete="off" aria-label="Code">
       <p class="msg" id="get-msg" role="alert"></p>
+      <p class="note" id="get-note" role="status"></p>
     </div>
 
     <div id="get-done" hidden>
@@ -242,6 +248,7 @@
       <button class="btn" id="copy-text" type="button" hidden>Copy text</button>
       <a class="btn" id="download">Download file</a>
       <button class="btn quiet" id="another" type="button">Enter another code</button>
+      <button class="btn end" id="end-get" type="button">Done, delete from server</button>
     </div>
   </section>
 
@@ -382,6 +389,7 @@
   };
 
   function showTicket(data) {
+    $("send-note").textContent = "";
     $("code").textContent = data.code;
     $("sent-name").textContent = data.name || "";
     $("copy").textContent = "Copy code";
@@ -397,7 +405,8 @@
     });
   }
   function resetSend() {
-    clearInterval(sendTimer);
+    clearInterval(sendTimer); $("send-note").textContent = "";
+    if (typeof disarmSend === "function") disarmSend();
     $("textin").value = ""; $("count").textContent = "0 words"; $("send-text").disabled = true;
     $("send-done").hidden = true; $("send-pick").hidden = false; $("send-msg").textContent = "";
   }
@@ -409,6 +418,33 @@
       function () { btn.textContent = "Could not copy. Type it in: " + code; }
     );
   };
+
+  // ----- End early -----
+  // First tap arms the button, second tap deletes. It disarms after 4 seconds.
+  function endButton(btn, label, getCode, done) {
+    var timer = null;
+    function disarm() { clearTimeout(timer); btn.classList.remove("armed"); btn.textContent = label; btn.disabled = false; }
+    btn.onclick = function () {
+      if (!btn.classList.contains("armed")) {
+        btn.classList.add("armed"); btn.textContent = "Tap again to delete";
+        timer = setTimeout(disarm, 4000); return;
+      }
+      clearTimeout(timer); btn.disabled = true; btn.textContent = "Deleting…";
+      fetch("/api/delete/" + getCode(), { method: "POST" }).then(function (r) {
+        disarm();
+        // 404 means it was already gone, which is the outcome we wanted.
+        if (r.ok || r.status === 404) done(); else btn.textContent = "Could not delete. Try again.";
+      }).catch(function () { disarm(); btn.textContent = "No connection. Try again."; });
+    };
+    return disarm;
+  }
+  var disarmSend = endButton($("end-send"), "End now and delete", function () { return $("code").textContent; }, function () {
+    resetSend(); $("send-note").textContent = "Deleted. That code no longer works.";
+  });
+  var currentCode = "";
+  var disarmGet = endButton($("end-get"), "Done, delete from server", function () { return currentCode; }, function () {
+    resetGet(); $("get-note").textContent = "Deleted from the server.";
+  });
 
   // ----- Receive -----
   $("codebox").addEventListener("input", function () {
@@ -465,7 +501,7 @@
 
   var BADGES = { image: "IMG", video: "VIDEO", audio: "AUDIO", pdf: "PDF", text: "TXT" };
   function fetchFile(code) {
-    $("codebox").disabled = true;
+    $("codebox").disabled = true; $("get-note").textContent = ""; currentCode = code;
     fetch("/api/info/" + code).then(function (r) {
       return r.json().then(function (d) { return { ok: r.ok, data: d }; });
     }).then(function (res) {
@@ -547,7 +583,7 @@
   }
 
   function resetGet() {
-    clearInterval(getTimer);
+    clearInterval(getTimer); $("get-note").textContent = ""; disarmGet();
     $("preview").innerHTML = ""; $("flist").innerHTML = ""; $("flist").hidden = true;
     $("wrap").classList.remove("wide");
     $("codebox").value = ""; $("get-msg").textContent = "";

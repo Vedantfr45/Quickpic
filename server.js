@@ -251,6 +251,14 @@ app.get("/api/file/:code/:index", serveFile);
 app.get("/api/file/:code", serveFile);
 app.get("/api/image/:code", serveFile); // old address, still works
 
+// End a code early: delete its files now instead of waiting 10 minutes.
+app.post("/api/delete/:code", (req, res) => {
+  const entry = findByCode(req, res);
+  if (!entry) return;
+  removeFile(req.params.code);
+  res.json({ deleted: true });
+});
+
 // Tell the page how the server is configured.
 app.get("/api/config", (req, res) => {
   res.json({ codeLength: CODE_LENGTH, maxFileMb: MAX_FILE_MB, maxFiles: MAX_FILES, maxTotalMb: MAX_TOTAL_MB, extensions: Object.keys(FILE_TYPES) });
