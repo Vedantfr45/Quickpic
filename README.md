@@ -2,7 +2,7 @@
 
 Send a file from your phone to any computer with a 6-digit code. No login. The file is deleted after 10 minutes.
 
-Supported: photos (JPG, PNG, WEBP, GIF, HEIC), videos (MP4, MOV, WEBM), audio (MP3, M4A, WAV), PDF and text files, up to 50 MB.
+Supported: photos (JPG, PNG, WEBP, GIF, HEIC), videos (MP4, MOV, WEBM), audio (MP3, M4A, WAV), PDF and text files. Up to 10 files under one code, 50 MB each and 100 MB in total. Several files can be downloaded one by one or all together as a zip.
 
 ## Run it on your computer
 

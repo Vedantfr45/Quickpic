@@ -136,6 +136,23 @@
   .textin:focus { outline: none; border-color: var(--blue); background: #fff; }
   .count { margin: 6px 2px 0; color: var(--ink-soft); font-size: 14px; text-align: right; font-variant-numeric: tabular-nums; }
   .btn:disabled { opacity: .45; cursor: default; }
+  .flist { list-style: none; margin: 0 0 4px; padding: 0; display: grid; gap: 8px; }
+  .flist li { display: flex; align-items: center; gap: 12px; padding: 10px; border-radius: 14px; background: #f6f8fc; }
+  .flist .thumb { flex: none; width: 52px; height: 52px; border-radius: 10px; object-fit: cover; background: #e3e9f3; }
+  .flist .badge {
+    flex: none; width: 52px; height: 52px; border-radius: 10px; display: grid; place-items: center;
+    background: var(--ink); color: #fff; font-weight: 800; font-size: 12px;
+  }
+  .flist .meta { flex: 1; min-width: 0; }
+  .flist .fname { font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .flist .fname a { color: inherit; text-decoration: none; }
+  .flist .fname a:hover { text-decoration: underline; }
+  .flist .fsize { color: var(--ink-soft); font-size: 15px; }
+  .mini {
+    flex: none; font: inherit; font-size: 15px; font-weight: 600; color: var(--ink); text-decoration: none;
+    background: #fff; border: 1px solid var(--line); border-radius: 10px; padding: 8px 12px; cursor: pointer;
+  }
+  .mini:hover { border-color: var(--ink-soft); }
   .pct { margin: 8px 0 0; text-align: center; color: var(--ink-soft); font-size: 15px; font-variant-numeric: tabular-nums; }
   .left { margin: 12px 0 0; color: var(--ink-soft); text-align: center; }
 
@@ -166,14 +183,14 @@
   <!-- SEND -->
   <section class="sheet" id="send" role="tabpanel" aria-labelledby="tab-send">
     <div id="send-pick">
-      <h2>Send a file</h2>
-      <p class="hint">Photos, videos, MP3s, PDFs and text files, up to <span id="max-mb">50</span> MB.</p>
+      <h2>Send files</h2>
+      <p class="hint">Photos, videos, MP3s, PDFs and text files. Up to <span id="max-files">10</span> at once, <span id="max-mb">50</span> MB each.</p>
       <button class="drop" id="drop" type="button">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 16V4M7 9l5-5 5 5M4 16v3a1 1 0 0 0 1 1h14a1 1 0 0 0 1-1v-3"/></svg>
-        <strong>Choose a file</strong>
-        <span id="drop-sub">or drop it here, or paste with Ctrl+V</span>
+        <strong>Choose files</strong>
+        <span id="drop-sub">or drop them here, or paste with Ctrl+V</span>
       </button>
-      <input id="file" type="file" accept="image/*,video/*,audio/*,.pdf,.txt,.mp3,.m4a,.wav,.mp4,.mov,.webm" hidden>
+      <input id="file" type="file" multiple accept="image/*,video/*,audio/*,.pdf,.txt,.mp3,.m4a,.wav,.mp4,.mov,.webm" hidden>
       <div class="progress" id="progress" hidden><i></i></div>
       <p class="pct" id="pct" hidden></p>
       <div class="or">or send text</div>
@@ -201,14 +218,14 @@
         <li>Type the code</li>
       </ol>
       <button class="btn quiet" id="copy" type="button">Copy code</button>
-      <button class="btn quiet" id="again" type="button">Send another file</button>
+      <button class="btn quiet" id="again" type="button">Send something else</button>
     </div>
   </section>
 
   <!-- GET -->
   <section class="sheet" id="get" role="tabpanel" aria-labelledby="tab-get" hidden>
     <div id="get-ask">
-      <h2>Receive a file</h2>
+      <h2>Receive files</h2>
       <p class="hint">Type the code shown on the phone.</p>
       <input class="codebox" id="codebox" inputmode="numeric" autocomplete="off" aria-label="Code">
       <p class="msg" id="get-msg" role="alert"></p>
@@ -220,6 +237,7 @@
         <div class="meta"><div class="fname" id="fname"></div><div class="fsize" id="fsize"></div></div>
       </div>
       <div class="preview" id="preview"></div>
+      <ul class="flist" id="flist" hidden></ul>
       <p class="left">Available for <b id="get-time"></b> more</p>
       <button class="btn" id="copy-text" type="button" hidden>Copy text</button>
       <a class="btn" id="download">Download file</a>
@@ -233,7 +251,7 @@
 <script>
 (function () {
   var $ = function (id) { return document.getElementById(id); };
-  var codeLength = 6, maxFileMb = 50;
+  var codeLength = 6, maxFileMb = 50, maxFiles = 10, maxTotalMb = 100;
   var allowed = [".jpg", ".jpeg", ".png", ".webp", ".gif", ".heic", ".heif", ".pdf", ".txt", ".mp3", ".m4a", ".wav", ".mp4", ".mov", ".webm"];
   var sendTimer = null, getTimer = null;
 
@@ -250,6 +268,7 @@
   setCodeLength(6);
   fetch("/api/config").then(function (r) { return r.json(); }).then(function (c) {
     setCodeLength(c.codeLength); maxFileMb = c.maxFileMb; $("max-mb").textContent = c.maxFileMb;
+    if (c.maxFiles) { maxFiles = c.maxFiles; maxTotalMb = c.maxTotalMb; $("max-files").textContent = c.maxFiles; }
     if (c.extensions) allowed = c.extensions;
   }).catch(function () {});
 
@@ -289,7 +308,7 @@
 
   // ----- Send -----
   $("drop").onclick = function () { $("file").click(); };
-  $("file").onchange = function () { if (this.files[0]) upload(this.files[0]); this.value = ""; };
+  $("file").onchange = function () { if (this.files.length) upload(this.files); this.value = ""; };
 
   ["dragenter", "dragover"].forEach(function (e) {
     $("drop").addEventListener(e, function (ev) { ev.preventDefault(); $("drop").classList.add("over"); });
@@ -298,33 +317,39 @@
     $("drop").addEventListener(e, function (ev) { ev.preventDefault(); $("drop").classList.remove("over"); });
   });
   $("drop").addEventListener("drop", function (ev) {
-    var f = ev.dataTransfer.files[0]; if (f) upload(f);
+    if (ev.dataTransfer.files.length) upload(ev.dataTransfer.files);
   });
   document.addEventListener("paste", function (ev) {
     if ($("send").hidden || $("send-pick").hidden) return;
-    var items = (ev.clipboardData || {}).items || [];
-    for (var i = 0; i < items.length; i++) {
-      if (items[i].kind === "file") { upload(items[i].getAsFile()); return; }
-    }
+    var items = (ev.clipboardData || {}).items || [], picked = [];
+    for (var i = 0; i < items.length; i++) if (items[i].kind === "file") picked.push(items[i].getAsFile());
+    if (picked.length) upload(picked);
   });
 
   function extension(name) {
     var m = /\.[^.]+$/.exec(name || ""); return m ? m[0].toLowerCase() : "";
   }
-  function upload(file) {
+  function upload(list) {
     $("send-msg").textContent = "";
-    var ext = extension(file.name);
-    if (allowed.indexOf(ext) < 0 && !(ext === "" && file.type.indexOf("image/") === 0)) {
-      $("send-msg").textContent = "This file type is not supported. Send a photo, video, MP3, PDF or text file.";
-      return;
+    var picked = Array.prototype.slice.call(list.length !== undefined ? list : [list]);
+    function fail(m) { $("send-msg").textContent = m; }
+    if (picked.length > maxFiles) return fail("That is " + picked.length + " files. You can send up to " + maxFiles + " at once.");
+    var total = 0;
+    for (var i = 0; i < picked.length; i++) {
+      var f = picked[i], ext = extension(f.name);
+      if (allowed.indexOf(ext) < 0 && !(ext === "" && f.type.indexOf("image/") === 0))
+        return fail((picked.length > 1 ? f.name + ": this" : "This") + " file type is not supported. Send photos, videos, MP3s, PDFs or text files.");
+      if (f.size > maxFileMb * 1024 * 1024) return fail(f.name + " is over " + maxFileMb + " MB. Pick a smaller one.");
+      total += f.size;
     }
-    if (file.size > maxFileMb * 1024 * 1024) { $("send-msg").textContent = "That file is over " + maxFileMb + " MB. Pick a smaller one."; return; }
+    if (total > maxTotalMb * 1024 * 1024) return fail("These files add up to more than " + maxTotalMb + " MB. Send fewer at a time.");
 
     var bar = $("progress").firstElementChild;
     bar.style.width = "0"; $("progress").hidden = false; $("drop").disabled = true; $("send-text").disabled = true;
-    $("pct").hidden = false; $("pct").textContent = "Uploading " + file.name;
+    $("pct").hidden = false; $("pct").textContent = "Uploading " + (picked.length > 1 ? picked.length + " files" : picked[0].name);
 
-    var form = new FormData(); form.append("file", file);
+    var form = new FormData();
+    picked.forEach(function (f) { form.append("file", f, f.name); });
     var xhr = new XMLHttpRequest();
     xhr.open("POST", "/api/upload");
     xhr.upload.onprogress = function (e) {
@@ -368,7 +393,7 @@
       $("send-time").textContent = clock(left);
       $("send-bar").style.width = (left / total * 100) + "%";
     }, function () {
-      resetSend(); $("send-msg").textContent = "That code ran out. Send the file again for a new one.";
+      resetSend(); $("send-msg").textContent = "That code ran out. Send again for a new one.";
     });
   }
   function resetSend() {
@@ -451,6 +476,10 @@
         return;
       }
       var d = res.data, url = "/api/file/" + code;
+      var list = d.files || [{ name: d.name, kind: d.kind, size: d.size }];
+      startTimer(d.expiresInSeconds);
+      if (list.length > 1) return showMany(code, list);
+      $("flist").hidden = true; $("filecard").hidden = false;
       $("filecard").hidden = d.kind === "image";
       $("badge").textContent = BADGES[d.kind] || "FILE";
       $("fname").textContent = d.name; $("fname").title = d.name;
@@ -462,20 +491,64 @@
       $("download").textContent = d.kind === "image" ? "Download photo" : d.kind === "text" ? "Download as .txt" : "Download file";
       $("download").className = d.kind === "text" ? "btn quiet" : "btn";
       $("get-ask").hidden = true; $("get-done").hidden = false;
-      clearInterval(getTimer);
-      getTimer = countdown(d.expiresInSeconds, function (left) {
-        $("get-time").textContent = clock(left);
-      }, function () {
-        resetGet(); $("get-msg").textContent = "That file has been deleted. Ask for a new code.";
-      });
     }).catch(function () {
       $("codebox").disabled = false;
       $("get-msg").textContent = "Could not reach the server. Check your internet and try again.";
     });
   }
+  function startTimer(seconds) {
+    clearInterval(getTimer);
+    getTimer = countdown(seconds, function (left) {
+      $("get-time").textContent = clock(left);
+    }, function () {
+      resetGet(); $("get-msg").textContent = "Those files have been deleted. Ask for a new code.";
+    });
+  }
+
+  function showMany(code, list) {
+    var base = "/api/file/" + code + "/";
+    $("filecard").hidden = true; $("preview").innerHTML = ""; $("copy-text").hidden = true;
+    $("wrap").classList.remove("wide");
+    var ul = $("flist"); ul.innerHTML = ""; ul.hidden = false;
+    var total = 0;
+    list.forEach(function (f, i) {
+      total += f.size;
+      var li = el("li", {});
+      if (f.kind === "image") {
+        var img = el("img", { "class": "thumb", alt: "", loading: "lazy" });
+        img.onerror = function () { var b = el("div", { "class": "badge" }); b.textContent = "IMG"; img.replaceWith(b); };
+        img.src = base + i; li.appendChild(img);
+      } else {
+        var b = el("div", { "class": "badge" }); b.textContent = BADGES[f.kind] || "FILE"; li.appendChild(b);
+      }
+      var meta = el("div", { "class": "meta" });
+      var name = el("div", { "class": "fname" }), open = el("a", { href: base + i, target: "_blank", rel: "noopener", title: "Open " + f.name });
+      open.textContent = f.name; name.appendChild(open);
+      var sz = el("div", { "class": "fsize" }); sz.textContent = size(f.size);
+      meta.appendChild(name); meta.appendChild(sz); li.appendChild(meta);
+      if (f.kind === "text") {
+        var cp = el("button", { "class": "mini", type: "button" }); cp.textContent = "Copy";
+        cp.onclick = function () {
+          fetch(base + i).then(function (r) { return r.text(); }).then(function (t) {
+            var hold = el("pre", {}); hold.textContent = t; hold.style.cssText = "position:fixed;left:-9999px"; document.body.appendChild(hold);
+            copyFrom(t, hold, cp, "Copied"); setTimeout(function () { hold.remove(); }, 1000);
+          });
+        };
+        li.appendChild(cp);
+      }
+      var dl = el("a", { "class": "mini", href: base + i + "?download=1", download: f.name });
+      dl.textContent = "Save"; li.appendChild(dl);
+      ul.appendChild(li);
+    });
+    $("download").href = base + "zip"; $("download").setAttribute("download", "quickpic-" + code + ".zip");
+    $("download").textContent = "Download all " + list.length + " (" + size(total) + ")";
+    $("download").className = "btn";
+    $("get-ask").hidden = true; $("get-done").hidden = false;
+  }
+
   function resetGet() {
     clearInterval(getTimer);
-    $("preview").innerHTML = "";
+    $("preview").innerHTML = ""; $("flist").innerHTML = ""; $("flist").hidden = true;
     $("wrap").classList.remove("wide");
     $("codebox").value = ""; $("get-msg").textContent = "";
     $("get-done").hidden = true; $("get-ask").hidden = false;

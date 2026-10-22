@@ -1,6 +1,7 @@
 // QuickPic - share a file with a short code that expires after 10 minutes.
 const express = require("express");
 const multer = require("multer");
+const archiver = require("archiver");
 const crypto = require("crypto");
 const fs = require("fs");
 const path = require("path");
@@ -9,7 +10,9 @@ const path = require("path");
 const PORT = process.env.PORT || 3000;
 const CODE_LENGTH = 6;                 // digits in the code
 const EXPIRY_MS = 10 * 60 * 1000;      // 10 minutes
-const MAX_FILE_MB = 50;                // biggest file allowed
+const MAX_FILE_MB = 50;                // biggest single file allowed
+const MAX_FILES = 10;                  // files per code
+const MAX_TOTAL_MB = 100;              // all files under one code together
 const MAX_UPLOADS_PER_10_MIN = 20;     // per IP address
 const MAX_WRONG_CODES_PER_MIN = 10;    // per IP address
 // ---------------------------------------------------------
@@ -56,7 +59,7 @@ const UPLOAD_DIR = path.join(__dirname, "uploads");
 fs.rmSync(UPLOAD_DIR, { recursive: true, force: true });
 fs.mkdirSync(UPLOAD_DIR, { recursive: true });
 
-// code -> { file, ext, name, size, expiresAt }
+// code -> { items: [{ file, ext, name, size }], expiresAt }
 const files = new Map();
 
 function newCode() {
@@ -71,7 +74,7 @@ function removeFile(code) {
   const entry = files.get(code);
   if (!entry) return;
   files.delete(code);
-  fs.unlink(entry.file, () => {});
+  entry.items.forEach((it) => fs.unlink(it.file, () => {}));
 }
 
 function getLive(code) {
@@ -124,7 +127,7 @@ const upload = multer({
     destination: UPLOAD_DIR,
     filename: (req, file, cb) => cb(null, crypto.randomBytes(16).toString("hex") + extOf(file)),
   }),
-  limits: { fileSize: MAX_FILE_MB * 1024 * 1024, files: 1 },
+  limits: { fileSize: MAX_FILE_MB * 1024 * 1024, files: MAX_FILES },
   fileFilter: (req, file, cb) => {
     if (extOf(file)) return cb(null, true);
     const err = new Error("This file type is not supported. Send a photo, video, MP3, PDF or text file.");
@@ -142,27 +145,42 @@ app.use((req, res, next) => {
 });
 app.use(express.static(path.join(__dirname, "public")));
 
-// Send a file, get a code back.
+// Send one or more files, get one code back.
 app.post("/api/upload", (req, res, next) => {
   if (uploadLimiter.blocked(req.ip)) {
     return res.status(429).json({ error: "Too many uploads. Please wait a few minutes." });
   }
-  upload.single("file")(req, res, (err) => {
-    if (err) return next(err);
-    if (!req.file) return res.status(400).json({ error: "No file was sent." });
+  upload.array("file", MAX_FILES)(req, res, (err) => {
+    const sent = req.files || [];
+    const discard = () => sent.forEach((f) => fs.unlink(f.path, () => {}));
+    if (err) { discard(); return next(err); }
+    if (!sent.length) return res.status(400).json({ error: "No file was sent." });
+    const total = sent.reduce((n, f) => n + f.size, 0);
+    if (total > MAX_TOTAL_MB * 1024 * 1024) {
+      discard();
+      return res.status(413).json({ error: "These files add up to more than " + MAX_TOTAL_MB + " MB. Send fewer at a time." });
+    }
 
     uploadLimiter.hit(req.ip);
-    const ext = path.extname(req.file.filename);
     const code = newCode();
     const expiresAt = Date.now() + EXPIRY_MS;
-    files.set(code, {
-      file: req.file.path,
-      ext,
-      name: cleanName(req.file.originalname, ext, code),
-      size: req.file.size,
-      expiresAt,
+    const used = new Set();
+    const items = sent.map((f) => {
+      const ext = path.extname(f.filename);
+      let name = cleanName(f.originalname, ext, code);
+      // Two files with the same name would clash in the zip; number the repeats.
+      for (let i = 2; used.has(name.toLowerCase()); i++) name = cleanName(f.originalname, ext, code).replace(/(\.[^.]+)$/, " (" + i + ")$1");
+      used.add(name.toLowerCase());
+      return { file: f.path, ext, name, size: f.size };
     });
-    res.json({ code, name: files.get(code).name, expiresAt, expiresInSeconds: Math.round(EXPIRY_MS / 1000) });
+    files.set(code, { items, expiresAt });
+    res.json({
+      code,
+      name: items.length === 1 ? items[0].name : items.length + " files",
+      count: items.length,
+      expiresAt,
+      expiresInSeconds: Math.round(EXPIRY_MS / 1000),
+    });
   });
 });
 
@@ -182,48 +200,69 @@ function findByCode(req, res) {
   return entry;
 }
 
-// Is this code valid, what is it, and how long is left?
+// Is this code valid, what is in it, and how long is left?
 app.get("/api/info/:code", (req, res) => {
   const entry = findByCode(req, res);
   if (!entry) return;
+  const list = entry.items.map((it) => ({ name: it.name, kind: FILE_TYPES[it.ext].kind, size: it.size }));
   res.json({
-    name: entry.name,
-    kind: FILE_TYPES[entry.ext].kind,
-    size: entry.size,
+    files: list,
+    // single-file fields, kept for the older page
+    name: list[0].name, kind: list[0].kind, size: list[0].size,
     expiresInSeconds: Math.max(0, Math.round((entry.expiresAt - Date.now()) / 1000)),
   });
 });
 
-// The file itself. Add ?download=1 to force a download.
-// Supports range requests, so videos and audio can be skipped through.
+// One file. /api/file/CODE is the first file, /api/file/CODE/2 the third.
+// Add ?download=1 to force a download. Supports range requests for video/audio.
 function serveFile(req, res) {
   const entry = findByCode(req, res);
   if (!entry) return;
-  const type = FILE_TYPES[entry.ext];
-  const ascii = entry.name.replace(/[^\x20-\x7e]/g, "_").replace(/["\\]/g, "");
-  res.sendFile(entry.file, {
+  const i = req.params.index === undefined ? 0 : Number(req.params.index);
+  const it = Number.isInteger(i) ? entry.items[i] : null;
+  if (!it) return res.status(404).json({ error: "That file is not in this code." });
+  const type = FILE_TYPES[it.ext];
+  const ascii = it.name.replace(/[^\x20-\x7e]/g, "_").replace(/["\\]/g, "");
+  res.sendFile(it.file, {
     acceptRanges: true,
     cacheControl: false,
     headers: {
       "Content-Type": type.mime,
       "Cache-Control": "no-store",
       "Content-Disposition": (req.query.download ? "attachment" : "inline") +
-        `; filename="${ascii}"; filename*=UTF-8''${encodeURIComponent(entry.name)}`,
+        `; filename="${ascii}"; filename*=UTF-8''${encodeURIComponent(it.name)}`,
     },
   }, (err) => { if (err && !res.headersSent) res.status(404).end(); });
 }
+app.get("/api/file/:code/zip", (req, res) => {
+  const entry = findByCode(req, res);
+  if (!entry) return;
+  const name = "quickpic-" + req.params.code + ".zip";
+  res.setHeader("Content-Type", "application/zip");
+  res.setHeader("Cache-Control", "no-store");
+  res.setHeader("Content-Disposition", `attachment; filename="${name}"`);
+  const zip = archiver("zip", { store: true }); // photos and videos are already compressed
+  zip.on("error", () => res.destroy());
+  zip.pipe(res);
+  entry.items.forEach((it) => zip.file(it.file, { name: it.name }));
+  zip.finalize();
+});
+app.get("/api/file/:code/:index", serveFile);
 app.get("/api/file/:code", serveFile);
 app.get("/api/image/:code", serveFile); // old address, still works
 
 // Tell the page how the server is configured.
 app.get("/api/config", (req, res) => {
-  res.json({ codeLength: CODE_LENGTH, maxFileMb: MAX_FILE_MB, extensions: Object.keys(FILE_TYPES) });
+  res.json({ codeLength: CODE_LENGTH, maxFileMb: MAX_FILE_MB, maxFiles: MAX_FILES, maxTotalMb: MAX_TOTAL_MB, extensions: Object.keys(FILE_TYPES) });
 });
 
 // Errors (too big, wrong type, anything unexpected).
 app.use((err, req, res, next) => {
   if (err.code === "LIMIT_FILE_SIZE") {
-    return res.status(413).json({ error: "File is too big. The limit is " + MAX_FILE_MB + " MB." });
+    return res.status(413).json({ error: "A file is too big. The limit is " + MAX_FILE_MB + " MB per file." });
+  }
+  if (err.code === "LIMIT_FILE_COUNT" || err.code === "LIMIT_UNEXPECTED_FILE") {
+    return res.status(400).json({ error: "You can send up to " + MAX_FILES + " files at once." });
   }
   if (err.status === 400) return res.status(400).json({ error: err.message });
   console.error(err);
